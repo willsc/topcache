@@ -4,28 +4,36 @@ A portable terminal dashboard for **cache activity** on x86 (Intel & AMD), in tw
 modes:
 
 - **per-process (default)** — a `top`-style live table of the busiest processes
-  with their L1/L2/L3 behaviour: MPKI per level, miss %, evictions, IPC, P/E-core
-  mix, plus a full per-level detail panel for the hottest process.
+  with their L1/L2/L3 behaviour: MPKI per level, per-level miss% (L1d/L2/L3),
+  L1d/L2 eviction rates, IPC, P/E-core mix, and — on hosts with isolated cores —
+  an **ISO%** column (share of cycles on isolated cores), plus a full per-level
+  detail panel that splits each level's misses into isolated vs shared cores.
 - **system-wide (`--system`)** — aggregate cache event rates per level, split by
-  core type, with optional L3 occupancy (bytes) where the hardware exposes it.
+  core type, with optional **per-socket** L3 occupancy (bytes) where the hardware
+  exposes it (Intel RDT/CMT, AMD QoS).
 
 ```
-┌─ cwills-NucBox-EVO-T1   Intel(R) Core(TM) Ultra 9 285H ─────────────────────────────┐
-│ per-process cache top   monitored=20 procs   sort=l3_mpki   interval=1000ms          │
-│ MPKI = cache misses per 1000 instructions (lower is better); P% = cycles on P-cores  │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│     PID  COMMAND          CPU%   IPC   P%    L1d   L1i    L2    L3  L3miss%      RSS    │
-│ 2548764  claude            0.0  0.69   84   15.9  49.8  60.0   4.7   74.0%  371.8 MiB   │
-│ 1871959  clickhouse-serv   4.3  1.03   25    2.6  27.8   0.6   0.6   20.6%  997.7 MiB   │
-│ 2671656  python3 stream  100.1  7.19  100    0.1   1.1   0.0   0.0   71.4%   73.3 MiB   │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-┌─ detail · pid 2548764 · claude  [11 thr, 371.8 MiB, IPC 0.69] ───────────────────────┐
-│ level     access/s     miss/s   miss%   MPKI   evict/s                                 │
-│ L1 data    434.05K     23.67K    5.5%   15.9    3.25K                                   │
-│ L2         139.61K     89.34K   64.0%   60.0    9.19K                                   │
-│ L3/LLC       9.55K      7.06K   74.0%    4.7      n/a                                   │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─ hft-node-3   Intel(R) Xeon(R) Gold 6438N ───────────────────────────────────────────────────────────────────────────┐
+│ per-process cache top   monitored=20 procs   sort=l3_mpki   interval=1000ms                                            │
+│ MPKI = misses per 1000 instructions (lower=better); ISO% = cycles on isolated cores 2-15                               │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│     PID  COMMAND        CPU%   IPC  P% ISO%   L1d  L1i    L2   L3  L1dmiss% L2miss% L3miss%  L1dEv/s  L2Ev/s      RSS    │
+│ 2671656  feed_handler  100.0  2.41   ·  100   0.9  1.1  12.4  4.7    1.2%   38.0%   74.0%    12.5K    9.19K  73.3 MiB   │
+│ 1871959  matching_eng   98.3  1.83   ·   97   2.6  3.8   6.0  0.9    2.1%   20.6%   31.0%     3.25K   2.10K 512.0 MiB   │
+│ 2548764  journaler       4.3  0.69   ·    0  15.9 49.8   2.0  0.1    5.5%    9.0%   12.0%     1.10K   0.40K 128.0 MiB   │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ detail · pid 2671656 · feed_handler  [8 thr, 73.3 MiB, IPC 2.41, isolated-core 100%] ────────────────────────────────┐
+│ level             access/s     miss/s   miss%   MPKI   evict/s                                                         │
+│ L1 data            434.05K     23.67K    5.5%    0.9    12.5K                                                          │
+│   · on isolated    410.00K     22.90K    5.6%    0.9    12.1K                                                          │
+│   · on shared       24.00K      0.77K    3.2%    0.2     0.4K                                                          │
+│ L2                 139.61K     89.34K   38.0%   12.4    9.19K                                                          │
+│ L3/LLC               9.55K      7.06K   74.0%    4.7      n/a                                                          │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+(`P%` is `·` here because Xeon isn't a hybrid part; the isolated/shared split
+rows appear in the detail panel only on hosts with isolated cores.)
 
 ### Reading the per-process table
 
@@ -200,6 +208,9 @@ sudo ./run.sh --interval 250
 
 # headless: print 5 per-process frames as text then exit (SSH / logging / CI)
 sudo python3 -m cachetop --dump 5 --interval 1000
+
+# check which cache events this CPU supports (validate a new Xeon/EPYC box)
+sudo python3 -m cachetop --show-events
 
 # aggregate system-wide view instead, with L3 occupancy where supported
 sudo ./run.sh --system
