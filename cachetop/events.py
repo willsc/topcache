@@ -64,6 +64,21 @@ class Channel:
         self.key = f"{self.pmu}/{self.event}/"
 
 
+def expected_slots(vendor: str) -> list[tuple[str, str]]:
+    """Ordered (level, role) pairs the catalog tries for this vendor.
+
+    Used by the --show-events diagnostic to report which metrics the hardware
+    supports vs. which are missing on a given server part.
+    """
+    seen: list[tuple[str, str]] = []
+    for level, role, vtag, _ in _CATALOG:
+        if vtag != "any" and vtag != vendor:
+            continue
+        if (level, role) not in seen:
+            seen.append((level, role))
+    return seen
+
+
 def _candidates_for(vendor: str) -> list[tuple[str, str, str]]:
     """Flatten the catalog to (level, role, event), filtered by vendor."""
     out: list[tuple[str, str, str]] = []

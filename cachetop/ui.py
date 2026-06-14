@@ -46,6 +46,17 @@ def fmt_bytes(v: int) -> str:
     return f"{f:.1f} GiB"
 
 
+def fmt_occupancy(occ) -> str:
+    """L3 occupancy summary; on multi-socket boxes also break it down per L3
+    domain (one domain per socket on Xeon CMT, per-CCX on AMD)."""
+    if len(occ.per_domain) <= 1:
+        return f"L3 occupancy: {fmt_bytes(occ.total_bytes)}"
+    parts = ", ".join(f"{dom.replace('mon_', '')}={fmt_bytes(b)}"
+                      for dom, b in sorted(occ.per_domain.items()))
+    return (f"L3 occupancy: {fmt_bytes(occ.total_bytes)} total over "
+            f"{len(occ.per_domain)} domains  [{parts}]")
+
+
 # ---------------------------------------------------------------- headless ---
 
 def render_text(snap: Snapshot, state: MetricsState, caps: Caps,
@@ -69,8 +80,7 @@ def render_text(snap: Snapshot, state: MetricsState, caps: Caps,
                 f"evict={fmt_rate(cell.evict_rate)}/s"
             )
     if occ is not None:
-        lines.append(f"  L3 occupancy: {fmt_bytes(occ.total_bytes)} "
-                     f"({len(occ.per_domain)} domain(s))")
+        lines.append("  " + fmt_occupancy(occ))
     return "\n".join(lines)
 
 
@@ -84,9 +94,7 @@ def build_renderable(snap: Snapshot, state: MetricsState, caps: Caps,
     from rich.text import Text
 
     occ_line = ("L3 occupancy: not available on this CPU "
-                "(no resctrl/CMT)" if occ is None
-                else f"L3 occupancy: {fmt_bytes(occ.total_bytes)} "
-                     f"over {len(occ.per_domain)} domain(s)")
+                "(no resctrl/CMT)" if occ is None else fmt_occupancy(occ))
     hybrid = "hybrid " if caps.hybrid else ""
     from .topology import fmt_cpus
     iso_line = (f"isolated CPUs: {fmt_cpus(caps.isolated_cpus)}  "

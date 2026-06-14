@@ -82,6 +82,31 @@ anywhere — there you only get pressure proxies (miss rate, refill/eviction rat
 ¹ AMD L2/eviction event names vary by Zen generation (consult the PPR for your
 part); `cachetop` probes them at startup and silently omits any that don't count.
 
+### Server parts & multi-socket
+
+`cachetop` is built to be portable across server CPUs and sockets:
+
+- **Intel Xeon (server):** the Intel event set (`l1d.replacement`,
+  `l2_rqsts.*`, `l2_lines_out.non_silent`, `LLC-*`) is the same as on client
+  Intel, so every column populates. Server Xeons with **RDT/CMT** also give the
+  L3-occupancy bar (unlike the client Arrow Lake box above).
+- **AMD EPYC:** L1/L3 and instructions/cycles use generic events; L2 uses the
+  Zen `l2_request_g1.*` / `l2_cache_req_stat.*` events. Event names shift across
+  Zen generations, so **run `--show-events` on the target box** to see exactly
+  what counts (anything missing simply renders as `n/a`). L3 occupancy works via
+  AMD QoS monitoring through `resctrl`.
+- **Multi-socket / NUMA:** system-wide counting (`perf stat -a`) already spans
+  every socket, and L3 occupancy is reported **per L3 domain** (one per socket on
+  Xeon CMT, per-CCX on AMD) with the per-domain breakdown shown alongside the
+  total. Isolated-core detection and self-pinning use global CPU numbering, so
+  they work the same on a 2P/4P box.
+
+Validate any new CPU at a glance:
+
+```bash
+sudo python3 -m cachetop --show-events
+```
+
 This is a **client Arrow Lake** part: it does **not** implement RDT/CMT, so the
 L3-occupancy gauge is unavailable here. Everything else works. For the occupancy
 bar you need an EPYC, many Ryzen parts, or a server Xeon with CMT.

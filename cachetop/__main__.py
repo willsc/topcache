@@ -14,7 +14,7 @@ import time
 
 from . import __version__, caps as caps_mod
 from .collector import Collector
-from .events import probe
+from .events import probe, expected_slots
 from .keyboard import KeyReader, UP, DOWN, LEFT, RIGHT, ENTER, ESC, BACK
 from .metrics import MetricsState
 from .procmon import ProcessMonitor, SORT_KEYS
@@ -38,6 +38,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--no-pin", action="store_true",
                    help="do not pin cachetop off the isolated cores (default: "
                         "auto-pin the tool to housekeeping CPUs)")
+    p.add_argument("--show-events", action="store_true",
+                   help="print which cache events the PMU supports here (per "
+                        "level/role) and exit; use to validate a new CPU/server")
 
     g = p.add_argument_group("per-process mode (default)")
     g.add_argument("-n", "--top", type=int, default=20,
@@ -87,6 +90,19 @@ def _apply_affinity(args: argparse.Namespace, topo: topology.Topology) -> None:
         print("cachetop: warning: could not set CPU affinity; the tool may run "
               "on isolated cores. Pin it externally (taskset/cgroup) or pass "
               "--no-pin to silence this.", file=sys.stderr)
+
+
+def _print_event_coverage(caps, channels) -> None:
+    by_slot: dict[tuple[str, str], list[str]] = {}
+    for c in channels:
+        by_slot.setdefault((c.level, c.role), []).append(f"{c.event}@{c.pmu}")
+    print(f"cachetop event coverage   vendor={caps.vendor}   {caps.cpu_model}")
+    print(f"  PMUs: {', '.join(caps.pmus)}   sockets/L3-domains via resctrl: "
+          f"{'yes' if caps.resctrl_l3_mon else 'no'}")
+    for level, role in expected_slots(caps.vendor):
+        got = by_slot.get((level, role))
+        status = ", ".join(sorted(got)) if got else "MISSING (shown as n/a)"
+        print(f"  {level:<4} {role:<12} {status}")
 
 
 def _setup_common(topo: topology.Topology):
@@ -288,6 +304,10 @@ def run_system(args, topo) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     topo = topology.detect()
+    if args.show_events:
+        caps, channels = _setup_common(topo)
+        _print_event_coverage(caps, channels)
+        return 0
     _apply_affinity(args, topo)
     if args.system:
         return run_system(args, topo)
