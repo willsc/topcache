@@ -1,0 +1,2 @@
+# Live UI only; headless --dump mode runs on the stdlib alone.
+rich>=13.0
